@@ -1,5 +1,5 @@
 {
-    "serverIP": "",
+    "serverIP": "localhost",
     "defaultSQLUser": "",
     "defaultSQLDatabase": "",
     "defaultSQLPassword": "",
