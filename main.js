@@ -110,7 +110,7 @@ function applyVersion(vers) {
             }
         } else { // Version already installed
             console.log('Version already installed');
-        }
+        }       
 
         process.exit();
     });
@@ -148,7 +148,7 @@ async function main() {
                     console.log('Enter a number > -1 !');
                     process.exit();
                 } else if(verMig > totalVer.length - 1) {
-                    console.log(`Version maximale : ${totalVer.length - 1}`);
+                    console.log(`Max version : ${totalVer.length - 1}`);
                     process.exit();
                 }
 
