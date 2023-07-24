@@ -3,5 +3,6 @@
     "defaultSQLUser": "",
     "defaultSQLDatabase": "",
     "defaultSQLPassword": "",
+    "defaultSQLPort": 5432,
     "pathToFiles": "./migrations"
 }

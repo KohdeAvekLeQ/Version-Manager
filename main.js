@@ -8,16 +8,17 @@ let client= new Client({
     host: config.serverIP,
     user: config.defaultSQLUser,
     password: config.defaultSQLPassword,
-    database: config.defaultSQLDatabase
+    database: config.defaultSQLDatabase,
+    port: config.defaultSQLPort
 });
+
 
 // Get versions available in folder
 function getVersions() {
-    let files = fs.readdirSync(config.pathToFiles);
+    let dirs = fs.readdirSync(config.pathToFiles, {withFileTypes: true});
     
-    return files.filter(file => !file.includes('.'));
+    return dirs.filter(dir => dir.isDirectory()).map(dir => dir.name);
 };
-
 // Get actual version in DB
 function getActualVersion() {
     return new Promise((resolve, reject) => {
@@ -132,6 +133,11 @@ async function main() {
         console.log('-------- VERSION MANAGER --------');
         console.log(`Actual Version : ${actV}`);
         console.log(`Max version available : ${totalVer.length - 1}\n\n`);
+        if(totalVer.length - 1 < actV) {
+            console.log('You have a version above the available migrations !');
+            process.exit();
+        }
+
         console.log('Which version do you want to migrate to ?');
 
 
