@@ -1,22 +1,14 @@
 {
   "name": "version-manager",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Node version manager for PostgreSQL Database",
+  "author": "Kohdé",
+  "license": "MIT",
   "main": "main.js",
   "scripts": {
     "start": "node main.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/KohdeAvekLeQ/version-manager.git"
-  },
-  "author": "Kohdé",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/KohdeAvekLeQ/version-manager/issues"
-  },
-  "homepage": "https://github.com/KohdeAvekLeQ/version-manager#readme",
   "dependencies": {
-    "pg": "^8.11.1"
+    "pg": "^8.16.0"
   }
 }

@@ -1,172 +1,225 @@
 // Modules
-const config = require('./config.json');
+const readline = require('node:readline/promises');
+const {stdin, stdout} = require('node:process');
+const {Client} = require('pg');
 const fs = require('fs');
 
-// PGSQL Client
-const {Client} = require('pg');
-let client= new Client({
-    host: config.serverIP,
-    user: config.defaultSQLUser,
-    password: config.defaultSQLPassword,
-    database: config.defaultSQLDatabase,
-    port: config.defaultSQLPort
+// Conf
+const config = require('./config.json');
+
+// DB CLIENT
+let client = new Client({
+    host: config.host,
+    user: config.user,
+    database: config.database,
+    password: config.password,
+    port: config.port,
+    connectionTimeoutMillis: 3000
 });
 
+// Args
+const args = process.argv.slice(2);
 
-// Get versions available in folder
+// Version check
 function getVersions() {
-    let dirs = fs.readdirSync(config.pathToFiles, {withFileTypes: true});
-    
-    return dirs.filter(dir => dir.isDirectory()).map(dir => dir.name);
-};
-// Get actual version in DB
+    const dirsList = fs.readdirSync(config.pathToFiles, {withFileTypes: true}).filter((dir) => dir.isDirectory()).map((dir) => dir.name);
+    dirsList.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+
+    return dirsList;
+}
 function getActualVersion() {
     return new Promise((resolve, reject) => {
-        client.query('SELECT * FROM __migrations ORDER BY version DESC', (err, res) => {
-            if(err) {
-                console.log(err);
-                return reject('SQL error in getActualVersion');
+        client.query(
+            'SELECT * FROM __migrations ORDER BY version DESC;',
+            (err, res) => {
+                if (err) {
+                    console.log(err);
+                    return reject('SQL error in getActualVersion');
+                }
+
+                if (res.rowCount > 0) {
+                    return resolve(res.rows[0].version);
+                } else {
+                    return resolve(-1);
+                }
             }
-            
-            if(res.rowCount > 0) {
-                return resolve(res.rows[0].version);
-            } else {
-                return resolve(-1);
-            }
-        });
+        );
     });
 }
 
-
-// Apply SQL file to DB
+// Apply SQL
 function applySQLFile(data) {
     return new Promise((resolve, reject) => {
-        client.query(data, (err, res) => {
+        client.query(data, (err) => {
             if (err) {
                 console.error(err);
-                return reject("SQL Error while applying file");
+                return reject('SQL Error in version update');
             }
-            
+
             resolve();
         });
     });
 }
 
-// Apply a specific version
-function applyVersion(vers) {
-    // Get actual version in DB
-    getActualVersion().then(async version => {
-        // Versions available
-        let dirs = getVersions();
+// Apply version
+async function applyVersion(vers) {
+    // Get actual
+    const version = await getActualVersion();
+    let dirs = getVersions();
 
-        if(vers > version) { // New Version
-            // Apply all new versions
-            for(let v = version+1; v < vers+1; v++) {
+    // New Version
+    if (vers > version) {
+        // Begin SQL transaction
+        await applySQLFile('BEGIN;');
+
+        // Apply all new versions
+        try {
+            for (let v = version + 1; v < vers + 1; v++) {
                 // Actual directory
                 let dir = dirs[v];
 
                 // Get sql file
-                let files = fs.readdirSync(`${config.pathToFiles}/${dir}`).filter(file => file.startsWith('up') && file.endsWith('.sql'));
+                let files = fs
+                    .readdirSync(`${config.pathToFiles}/${dir}`)
+                    .filter(
+                        (file) => file.startsWith('up') && file.endsWith('.sql')
+                    );
 
                 // File exists
-                if(files.length > 0) {
+                if (files.length > 0) {
                     let file = files[0];
 
                     // Read file and query
-                    let data = fs.readFileSync(`${config.pathToFiles}/${dir}/${file}`).toString();
-                    await applySQLFile(data.toString()).catch((e) => {console.error(e);});
+                    let data = fs
+                        .readFileSync(`${config.pathToFiles}/${dir}/${file}`)
+                        .toString();
+                    await applySQLFile(data.toString()).catch((e) => {
+                        console.error(e);
+                    });
 
                     // Add version in DB
-                    await applySQLFile(`INSERT INTO __migrations(version) VALUES (${v});`);
+                    await applySQLFile(
+                        `INSERT INTO __migrations(version) VALUES (${v});`
+                    );
 
                     console.log(`Upgraded to V${v}`);
                 } else {
                     console.log(`No migration UP file for version ${v}`);
                 }
             }
-        } else if(vers < version) { // Rollback to old version
-            // Apply all old versions
-            for(let v = version; v > vers; v--) {
+
+            await applySQLFile('COMMIT;');
+        } catch (error) {
+            console.error(error);
+            await applySQLFile('ROLLBACK;');
+        }
+    } else if (vers < version) {
+        // Begin SQL transaction
+        await applySQLFile('BEGIN;');
+
+        // Apply all old versions
+        try {
+            for (let v = version; v > vers; v--) {
                 // Actual directory
                 let dir = dirs[v];
 
                 // Get sql file
-                let files = fs.readdirSync(`${config.pathToFiles}/${dir}`).filter(file => file.startsWith('down') && file.endsWith('.sql'));
+                let files = fs
+                    .readdirSync(`${config.pathToFiles}/${dir}`)
+                    .filter(
+                        (file) =>
+                            file.startsWith('down') && file.endsWith('.sql')
+                    );
 
                 // File exists
-                if(files.length > 0) {
+                if (files.length > 0) {
                     let file = files[0];
 
                     // Read file and query
-                    let data = fs.readFileSync(`${config.pathToFiles}/${dir}/${file}`).toString();
+                    let data = fs
+                        .readFileSync(`${config.pathToFiles}/${dir}/${file}`)
+                        .toString();
                     await applySQLFile(data.toString());
 
                     // Add version in DB
-                    await applySQLFile(`DELETE FROM __migrations WHERE version=${v}`);
+                    await applySQLFile(
+                        `DELETE FROM __migrations WHERE version=${v}`
+                    );
 
-                    console.log(`Downgraded to V${v-1}`);
+                    console.log(`Downgraded to V${v - 1}`);
                 } else {
                     console.log(`No migration DOWN file for version ${v}`);
                 }
             }
-        } else { // Version already installed
-            console.log('Version already installed');
-        }       
 
-        process.exit();
-    });
+            await applySQLFile('COMMIT;');
+        } catch (error) {
+            console.error(error);
+            await applySQLFile('ROLLBACK;');
+        }
+    } else {
+        // Version already installed
+        console.log('Version already installed');
+    }
+
+    process.exit();
 }
 
-
-
-// Main function
+// Main prog
 async function main() {
-    // Connect to client
-    client.connect().then(async () => {
+    await client.connect().then(async () => {
         // Create table migrations if not created
-        await applySQLFile('CREATE TABLE IF NOT EXISTS __migrations (version SERIAL PRIMARY KEY)');
+        await applySQLFile(
+            'CREATE TABLE IF NOT EXISTS __migrations (version SERIAL PRIMARY KEY);'
+        );
 
         let actV = await getActualVersion();
         let totalVer = getVersions();
 
-
         console.log('-------- VERSION MANAGER --------');
         console.log(`Actual Version : ${actV}`);
         console.log(`Max version available : ${totalVer.length - 1}\n\n`);
-        if(totalVer.length - 1 < actV) {
-            console.log('You have a version above the available migrations !');
+
+        // If skip enabled
+        if (
+            actV === totalVer.length - 1 &&
+            args.includes('--skip-if-last-version')
+        ) {
+            console.log('Last version already applied !');
+
+            await client.end();
             process.exit();
         }
 
-        console.log('Which version do you want to migrate to ?');
+        // Init readline
+        const rl = readline.createInterface({input: stdin, output: stdout});
 
-
-        // Waiting for data in input
-        process.stdin.once('data', data => {
-            if(isNaN(data)) {
-                console.log('Enter a number !');
-                process.exit();
-            } else {
-                let verMig = Number(data);
-                
-                // Check if exists
-                if(verMig < -1) {
-                    console.log('Enter a number > -1 !');
-                    process.exit();
-                } else if(verMig > totalVer.length - 1) {
-                    console.log(`Max version : ${totalVer.length - 1}`);
-                    process.exit();
-                }
-
-                // Change version
-                applyVersion(verMig);
+        try {
+            let versionNeeded = await rl.question(
+                'Which version do you want to migrate to ? '
+            );
+            if (isNaN(versionNeeded)) {
+                throw 'Enter a number !';
             }
-        });
-    }).catch((err) => {
-        console.error(err);
-    
-        console.log('\n\nError while connecting to client, check your db informations in config.json');
-        process.exit();
+
+            versionNeeded = Number(versionNeeded);
+
+            // Check if exists
+            if (versionNeeded < -1) {
+                throw 'Enter a number > -1 !';
+            } else if (versionNeeded > totalVer.length - 1) {
+                throw `Maximum version : ${totalVer.length - 1}`;
+            }
+
+            // Change version
+            await applyVersion(versionNeeded);
+        } catch (error) {
+            console.error('Error:', error);
+            process.exit();
+        } finally {
+            rl.close();
+            await client.end();
+        }
     });
 }
 main();
